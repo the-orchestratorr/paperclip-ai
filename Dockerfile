@@ -37,7 +37,6 @@ COPY --from=build /app /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssh-client jq gosu \
   && npm install -g @google/gemini-cli \
-  && ln -s /usr/local/bin/gemini-cli /usr/local/bin/gemini \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /paperclip
 
