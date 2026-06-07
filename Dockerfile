@@ -17,11 +17,16 @@ RUN pnpm --filter @paperclipai/ui build \
   && pnpm --filter @paperclipai/server build \
   && test -f server/dist/index.js
 
+# ---- TAHAP PRODUKSI UTAMA ----
 FROM base AS production
 WORKDIR /app
 COPY --from=build /app /app
+
+# [MODIFIKASI] Menambahkan instalasi Gemini CLI di sini bersama tools bawaan lainnya
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssh-client jq gosu \
+  && curl -sSL https://github.com/google/gemini-cli/releases/latest/download/gemini-cli-linux-amd64 -o /usr/local/bin/gemini \
+  && chmod +x /usr/local/bin/gemini \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /paperclip
 
