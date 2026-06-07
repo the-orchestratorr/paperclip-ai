@@ -1,65 +1,27 @@
-FROM node:lts-trixie-slim AS base
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git \
-  && rm -rf /var/lib/apt/lists/*
-RUN corepack enable
+FROM node:20-slim
 
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY cli/package.json cli/
-COPY server/package.json server/
-COPY ui/package.json ui/
-COPY packages/shared/package.json packages/shared/
-COPY packages/db/package.json packages/db/
-COPY packages/adapter-utils/package.json packages/adapter-utils/
-COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
-COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
-COPY packages/adapters/cursor-local/package.json packages/adapters/cursor-local/
-COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-gateway/
-COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
-COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
+# Install dependencies & Gemini CLI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @google/gemini-cli paperclipai
 
-RUN pnpm install --frozen-lockfile
+# Buat direktori dengan permissions yang benar SEBELUM switch user
+# node:20-slim sudah punya user 'node' (uid 1000)
+RUN mkdir -p /paperclip/instances/default/data/run-logs \
+             /paperclip/instances/default/data/workspaces \
+             /workspace \
+    && chown -R node:node /paperclip /workspace
 
-FROM base AS build
-WORKDIR /app
-COPY --from=deps /app /app
-COPY . .
-RUN pnpm --filter @paperclipai/ui build
-# Skip tsc for server — run via tsx at runtime (handles transpilation)
-# Build shared packages that server depends on
-RUN pnpm --filter @paperclipai/shared build || true
-RUN pnpm --filter @paperclipai/db build || true
+# Switch ke user non-root
+USER node
 
-FROM base AS production
-WORKDIR /app
-COPY --from=build /app /app
-RUN npm install --global --omit=dev tsx @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip/instances/default /workspaces
-
-# Copy meta-engine-workspace (agent instructions, templates, idea sources)
-COPY meta-engine-workspace /meta-engine-workspace
-
-# Create non-root user so claude --dangerously-skip-permissions works
-RUN useradd -m -s /bin/bash paperclip \
-  && chown -R paperclip:paperclip /paperclip /workspaces /meta-engine-workspace /app
-
-USER paperclip
-
-ENV NODE_ENV=production \
-  HOME=/paperclip \
-  HOST=0.0.0.0 \
-  PORT=3100 \
-  SERVE_UI=true \
-  PAPERCLIP_HOME=/paperclip \
-  PAPERCLIP_INSTANCE_ID=default \
-  PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
-  PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
-
-# Railway volumes are configured via the dashboard, not Dockerfile
-# VOLUME ["/paperclip"]
+WORKDIR /paperclip
 EXPOSE 3100
 
-CMD ["tsx", "server/src/index.ts"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+    CMD node -e "fetch('http://localhost:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["sh", "-c", \
+    "mkdir -p /paperclip/instances/default/data/run-logs && \
+     npx paperclipai server start --port 3100 --host 0.0.0.0"]
