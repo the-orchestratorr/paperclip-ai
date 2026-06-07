@@ -20,8 +20,8 @@ WORKDIR /paperclip
 EXPOSE 3100
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
-    CMD node -e "fetch('http://localhost:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    CMD node -e "fetch('http://localhost:${PORT:-3100}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["sh", "-c", \
     "mkdir -p /paperclip/instances/default/data/run-logs && \
-     npx paperclipai server start --port 3100 --host 0.0.0.0"]
+     npx paperclipai start --port ${PORT:-3100} --host 0.0.0.0"]
